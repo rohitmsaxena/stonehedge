@@ -2,7 +2,7 @@ This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-
 
 ## Project Description
 
-A CDKT-styled approach to redlining documents.
+A CRDT-styled approach to redlining documents.
 
 Documents are converted to CharNode objects that are then used for insertion/deletion
 
