@@ -15,18 +15,22 @@ export async function getOrderedNodes(documentId: string) {
     where: { documentId },
   });
 
-  // Build a map: afterId -> node (which node comes after which)
+  // Build map: afterId -> node
+  // When two nodes share the same afterId (tombstoned + replacement),
+  // prefer the non-deleted one
   const afterMap = new Map<string | null, (typeof nodes)[number]>();
   for (const node of nodes) {
-    afterMap.set(node.afterId, node);
+    const existing = afterMap.get(node.afterId);
+    if (!existing || (existing.deleted && !node.deleted)) {
+      afterMap.set(node.afterId, node);
+    }
   }
 
-  // Walk the linked list starting from head (afterId === null)
+  // Walk the linked list
   const ordered: typeof nodes = [];
   let current = afterMap.get(null);
   while (current) {
     ordered.push(current);
-
     current = afterMap.get(current.id);
   }
 

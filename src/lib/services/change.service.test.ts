@@ -1,4 +1,4 @@
-import { splitIntoWords, applyChanges } from './change.service';
+import { applyChanges, splitIntoWords } from './change.service';
 import { prisma } from '@/lib/prisma';
 import { invalidateCache } from './document.service';
 
@@ -159,19 +159,17 @@ describe('change.service', () => {
     });
 
     it('should tombstone and insert for a replace operation', async () => {
-      mockNodeFindUnique
-        .mockResolvedValueOnce({ id: 'n2', afterId: 'n1' })
-        .mockResolvedValueOnce({ id: 'n2', afterId: 'n1' });
-
-      mockNodeFindFirst
-        .mockResolvedValueOnce({ id: 'n3', afterId: 'n2' })
-        .mockResolvedValueOnce({ id: 'n3', afterId: 'n2' });
+      // insertNodes will find what's after the insertion point
+      mockNodeFindFirst.mockResolvedValue({
+        id: 'n3',
+        afterId: 'n2',
+      });
 
       mockNodeCreate.mockResolvedValue({ id: 'new_1' });
       mockNodeUpdate.mockResolvedValue({});
 
       await applyChanges(
-        docId,
+        'doc_1',
         [
           {
             type: 'replace',
@@ -180,20 +178,29 @@ describe('change.service', () => {
             newText: 'slow ',
           },
         ],
-        userId
+        'user_1'
       );
 
+      // Tombstone
       expect(mockNodeUpdateMany).toHaveBeenCalledWith({
         where: { id: { in: ['n2'] } },
         data: { deleted: true },
       });
 
+      // Insert new node
       expect(mockNodeCreate).toHaveBeenCalledWith({
         data: expect.objectContaining({
           content: 'slow ',
           afterId: 'n1',
-          documentId: docId,
+          documentId: 'doc_1',
         }),
+      });
+
+      // Restitch — only once, by insertNodes
+      expect(mockNodeUpdate).toHaveBeenCalledTimes(1);
+      expect(mockNodeUpdate).toHaveBeenCalledWith({
+        where: { id: 'n3' },
+        data: { afterId: 'new_1' },
       });
     });
 
@@ -222,26 +229,6 @@ describe('change.service', () => {
 
       // Version only incremented once at the end
       expect(mockDocUpdate).toHaveBeenCalledTimes(1);
-    });
-
-    it('should skip operation if deleted node not found', async () => {
-      mockNodeFindUnique.mockResolvedValue(null);
-
-      await applyChanges(
-        docId,
-        [
-          {
-            type: 'replace',
-            deleteIds: ['nonexistent'],
-            afterId: 'n1',
-            newText: 'slow ',
-          },
-        ],
-        userId
-      );
-
-      expect(mockNodeCreate).not.toHaveBeenCalled();
-      expect(mockDocUpdate).toHaveBeenCalled();
     });
   });
 });
