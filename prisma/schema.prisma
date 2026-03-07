@@ -1,0 +1,55 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+model Document {
+  id        String     @id @default(cuid())
+  title     String
+  version   Int        @default(1)
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+  userId    String
+  user      User       @relation(fields: [userId], references: [id])
+  nodes     CharNode[]
+  changes   Change[]
+}
+
+model CharNode {
+  id         String   @id @default(cuid())
+  content    String
+  deleted    Boolean  @default(false)
+  afterId    String?
+  documentId String
+  document   Document @relation(fields: [documentId], references: [id])
+  changeId   String?
+  change     Change?  @relation(fields: [changeId], references: [id])
+  createdAt  DateTime @default(now())
+}
+
+model Change {
+  id           String     @id @default(cuid())
+  type         String
+  status       String     @default("pending")
+  deleteIds    String     @default("[]")
+  afterId      String?
+  newText      String?
+  originalText String? // the text being replaced/deleted
+  documentId   String
+  document     Document   @relation(fields: [documentId], references: [id])
+  userId       String
+  user         User       @relation(fields: [userId], references: [id])
+  createdAt    DateTime   @default(now())
+  nodes        CharNode[]
+}
+
+model User {
+  id        String     @id @default(cuid())
+  name      String
+  documents Document[]
+  changes   Change[]
+}
