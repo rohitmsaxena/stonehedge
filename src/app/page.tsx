@@ -25,6 +25,7 @@ export default function Home() {
   const [searchResults, setSearchResults] = useState<SearchMatch[]>([]);
   const [searchTotal, setSearchTotal] = useState(0);
   const [searching, setSearching] = useState(false);
+  const [hasSearched, setHasSearched] = useState(false);
 
   useEffect(() => {
     fetch('/api/documents')
@@ -42,6 +43,7 @@ export default function Home() {
   async function handleSearch() {
     if (!searchQuery.trim()) return;
     setSearching(true);
+    setHasSearched(true);
     try {
       const res = await fetch(
         `/api/search?q=${encodeURIComponent(searchQuery)}&limit=20`
@@ -106,8 +108,7 @@ export default function Home() {
         )}
 
         {searchResults.length === 0 &&
-          searchTotal === 0 &&
-          searchQuery &&
+          hasSearched &&
           !searching && (
             <p className="mt-3 text-sm text-gray-500">No results found.</p>
           )}

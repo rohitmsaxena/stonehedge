@@ -55,23 +55,33 @@ export async function PATCH(
       return NextResponse.json({ id: changeId, status: 'rejected' });
     }
 
-    // Approve — apply the change to CharNodes
+    // Approve — mark accepted first, then apply the change to CharNodes.
+    // If applying fails, revert status to pending so it can be retried.
     console.log(`[PATCH] Approving change ${changeId}`);
-
-    const operation = {
-      type: change.type as 'insert' | 'delete' | 'replace',
-      deleteIds: JSON.parse(change.deleteIds),
-      afterId: change.afterId,
-      newText: change.newText ?? undefined,
-    };
-
-    await applyChanges(id, [operation], change.userId);
-    await updateIndexForDocument(id);
 
     await prisma.change.update({
       where: { id: changeId },
       data: { status: 'accepted' },
     });
+
+    try {
+      const operation = {
+        type: change.type as 'insert' | 'delete' | 'replace',
+        deleteIds: JSON.parse(change.deleteIds),
+        afterId: change.afterId,
+        newText: change.newText ?? undefined,
+      };
+
+      await applyChanges(id, [operation], change.userId);
+      await updateIndexForDocument(id);
+    } catch (applyError) {
+      // Revert status so the change can be retried
+      await prisma.change.update({
+        where: { id: changeId },
+        data: { status: 'pending' },
+      });
+      throw applyError;
+    }
 
     console.log(`[PATCH] Change ${changeId} approved and applied`);
 

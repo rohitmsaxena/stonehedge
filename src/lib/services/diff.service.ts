@@ -71,7 +71,18 @@ export function computeChanges(
   console.log('[computeChanges] Node contents:', nodeContents);
 
   if (nodeIds.length === 0) {
-    console.log('[computeChanges] No nodes, returning empty');
+    if (newText.length > 0) {
+      console.log('[computeChanges] No nodes, inserting all new text');
+      return [
+        {
+          type: 'insert',
+          deleteIds: [],
+          afterId: null,
+          newText,
+        },
+      ];
+    }
+    console.log('[computeChanges] No nodes and no new text, returning empty');
     return [];
   }
 
