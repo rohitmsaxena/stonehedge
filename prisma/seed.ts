@@ -148,12 +148,24 @@ function textToNodes(
   documentId: string;
   deleted: boolean;
 }[] {
-  // Split into words preserving whitespace
+  // Split into words preserving whitespace (same logic as splitIntoWords in change.service)
   const words: string[] = [];
-  const regex = /(\S+\s*)/g;
+  const regex = /(\s*\S+\s*)/g;
   let match;
   while ((match = regex.exec(text)) !== null) {
     words.push(match[1]);
+  }
+  // Capture any trailing whitespace-only remainder
+  const joined = words.join('');
+  if (joined.length < text.length) {
+    const remainder = text.slice(joined.length);
+    if (remainder.length > 0) {
+      if (words.length > 0) {
+        words[words.length - 1] += remainder;
+      } else {
+        words.push(remainder);
+      }
+    }
   }
 
   const nodes = [];
