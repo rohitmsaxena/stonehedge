@@ -134,6 +134,12 @@ export function computeChanges(
   return operations;
 }
 
+/**
+ * Builds an array of character offset ranges for a list of string items.
+ * Each entry maps an item to its { start, end } character positions within
+ * the concatenated string. Used to translate word or node indices back to
+ * character-level positions in the original text.
+ */
 function buildOffsets(items: string[]): { start: number; end: number }[] {
   const offsets: { start: number; end: number }[] = [];
   let pos = 0;
@@ -144,6 +150,11 @@ function buildOffsets(items: string[]): { start: number; end: number }[] {
   return offsets;
 }
 
+/**
+ * Returns the indices of all nodes whose character ranges overlap with the
+ * given [charStart, charEnd) range. This identifies which nodes are affected
+ * by a word-level deletion or replacement.
+ */
 function getOverlappingNodes(
   nodeOffsets: { start: number; end: number }[],
   charStart: number,
@@ -158,6 +169,11 @@ function getOverlappingNodes(
   return result;
 }
 
+/**
+ * Returns the index of the node that contains the given character position,
+ * or null if no node covers that position. Used to find the insertion anchor
+ * node when inserting new text at a specific character offset.
+ */
 function getNodeAtChar(
   nodeOffsets: { start: number; end: number }[],
   charPos: number
