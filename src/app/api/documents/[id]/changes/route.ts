@@ -19,7 +19,13 @@ export async function POST(
     const body = await request.json();
     const { text: newText, version, userId } = body;
 
-    if (!version) {
+    if (typeof newText !== 'string') {
+      return NextResponse.json(
+        { error: "Missing 'text' field", code: 400 },
+        { status: 400 }
+      );
+    }
+    if (version === undefined || version === null) {
       return NextResponse.json(
         { error: "Missing 'version' field", code: 400 },
         { status: 400 }

@@ -9,10 +9,22 @@ import { invalidateCache } from './document.service';
  */
 export function splitIntoWords(text: string): string[] {
   const words: string[] = [];
-  const regex = /(\S+\s*)/g;
+  const regex = /(\s*\S+\s*)/g;
   let match;
   while ((match = regex.exec(text)) !== null) {
     words.push(match[1]);
+  }
+  // Capture any trailing whitespace-only remainder not matched by the regex
+  const joined = words.join('');
+  if (joined.length < text.length) {
+    const remainder = text.slice(joined.length);
+    if (remainder.length > 0) {
+      if (words.length > 0) {
+        words[words.length - 1] += remainder;
+      } else {
+        words.push(remainder);
+      }
+    }
   }
   console.log(`[splitIntoWords] "${text}" -> ${JSON.stringify(words)}`);
   return words;
@@ -39,10 +51,33 @@ export async function applyChanges(
     console.log(`[applyChanges] Processing operation:`, JSON.stringify(op));
 
     if (op.type === 'delete') {
+      // Find the node that comes after the last deleted node BEFORE tombstoning,
+      // so we can restitch it to point past the deleted range.
+      const lastDeletedId = op.deleteIds[op.deleteIds.length - 1];
+      const firstDeletedId = op.deleteIds[0];
+      const firstDeleted = await prisma.charNode.findFirst({
+        where: { id: firstDeletedId },
+      });
+      const nodeAfterDeletedRange = await prisma.charNode.findFirst({
+        where: { afterId: lastDeletedId, documentId },
+      });
+
       await prisma.charNode.updateMany({
         where: { id: { in: op.deleteIds } },
         data: { deleted: true },
       });
+
+      // Restitch: the node after the deleted range should point to
+      // whatever the first deleted node was pointing after (i.e., skip over the deleted range)
+      if (nodeAfterDeletedRange && firstDeleted) {
+        await prisma.charNode.update({
+          where: { id: nodeAfterDeletedRange.id },
+          data: { afterId: firstDeleted.afterId },
+        });
+        console.log(
+          `[applyChanges] Restitched after delete: node ${nodeAfterDeletedRange.id} now after ${firstDeleted.afterId}`
+        );
+      }
       console.log(`[applyChanges] Tombstoned nodes: ${op.deleteIds}`);
     } else if (op.type === 'insert') {
       await insertNodes(op.afterId, op.newText!, documentId);
