@@ -1,3 +1,5 @@
+jest.mock('../prisma', () => ({ prisma: {} }));
+
 import { computeChanges } from './diff.service';
 
 beforeEach(() => {
@@ -186,8 +188,8 @@ describe('diff.service', () => {
       expect(changes[0].newText).toBe('incomplete ');
     });
 
-    it("should handle character insertion that doesn't change words at boundary", () => {
-      // Adding a word between two nodes
+    it('should handle inserting a new word between existing nodes', () => {
+      // Adding a word between two nodes is a pure insert
       const nodeIds = ['n1', 'n2'];
       const nodeContents = ['The ', 'fox'];
       const original = 'The fox';
@@ -196,8 +198,9 @@ describe('diff.service', () => {
       const changes = computeChanges(original, edited, nodeIds, nodeContents);
 
       expect(changes).toHaveLength(1);
-      // The insert lands at/near node n1, so n1 should be dirty
-      expect(changes[0].deleteIds.length).toBeGreaterThanOrEqual(1);
+      expect(changes[0].type).toBe('insert');
+      expect(changes[0].deleteIds).toEqual([]);
+      expect(changes[0].afterId).toBe('n1');
       expect(changes[0].newText).toContain('quick');
     });
 
@@ -210,7 +213,7 @@ describe('diff.service', () => {
 
       const changes = computeChanges(original, edited, nodeIds, nodeContents);
 
-      // diff-match-patch may merge nearby edits into one group
+      // Word-level diff should detect both changes independently
       // Either way, the new text should contain both modifications
       expect(changes.length).toBeGreaterThanOrEqual(1);
 

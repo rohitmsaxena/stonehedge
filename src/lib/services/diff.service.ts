@@ -1,6 +1,5 @@
-import DiffMatchPatch from 'diff-match-patch';
-
-const dmp = new DiffMatchPatch();
+import { diffArrays } from 'diff';
+import { splitIntoWords } from './change.service';
 
 /**
  * Represents a single change operation mapped to CharNodes.
@@ -15,49 +14,14 @@ export interface ChangeOperation {
   newText?: string;
 }
 
-interface NodePosition {
-  nodeIndex: number;
-  start: number;
-  end: number;
-}
-
-/**
- * Build a position map from node contents.
- */
-function buildPositionMap(nodeContents: string[]): NodePosition[] {
-  const map: NodePosition[] = [];
-  let pos = 0;
-  for (let i = 0; i < nodeContents.length; i++) {
-    const len = nodeContents[i].length;
-    map.push({ nodeIndex: i, start: pos, end: pos + len });
-    pos += len;
-  }
-  console.log('[buildPositionMap] Position map:', JSON.stringify(map));
-  return map;
-}
-
-/**
- * Find which node a character position falls within.
- */
-function getNodeAtPosition(posMap: NodePosition[], pos: number): number | null {
-  for (const entry of posMap) {
-    if (pos >= entry.start && pos < entry.end) {
-      return entry.nodeIndex;
-    }
-  }
-  return null;
-}
-
 /**
  * Diff the original visible text against the new edited text.
- * Maps character-level diffs to word-node-level operations.
+ * Maps word-level diffs directly to node-level operations.
  *
  * Approach:
- * 1. Compute character-level diffs
- * 2. Mark which nodes are "dirty" (touched by any insert/delete)
- * 3. Group contiguous dirty nodes
- * 4. For each group, map the original range to the new text range
- * 5. Produce replace/delete/insert operations at the node level
+ * 1. Split new text into words using splitIntoWords (nodeContents already represents the old words)
+ * 2. Use diffArrays to compare old words vs new words
+ * 3. Map removed/added word groups directly to delete/insert/replace operations
  */
 export function computeChanges(
   originalText: string,
@@ -86,150 +50,52 @@ export function computeChanges(
     return [];
   }
 
-  const diffs = dmp.diff_main(originalText, newText);
-  dmp.diff_cleanupSemantic(diffs);
+  const oldWords = nodeContents;
+  const newWords = splitIntoWords(newText);
 
-  console.log('[computeChanges] Diffs after cleanup:', JSON.stringify(diffs));
+  const diffs = diffArrays(oldWords, newWords);
 
-  const posMap = buildPositionMap(nodeContents);
+  console.log('[computeChanges] Word-level diffs:', JSON.stringify(diffs));
 
-  // Step 1: Mark dirty nodes
-  const dirtyNodes = new Set<number>();
-  let origPos = 0;
-
-  for (const [op, text] of diffs) {
-    if (op === 0) {
-      origPos += text.length;
-    } else if (op === -1) {
-      const start = origPos;
-      const end = origPos + text.length;
-      for (const entry of posMap) {
-        if (entry.end > start && entry.start < end) {
-          dirtyNodes.add(entry.nodeIndex);
-        }
-      }
-      origPos += text.length;
-    } else if (op === 1) {
-      let nodeIdx = getNodeAtPosition(posMap, origPos);
-      if (nodeIdx === null && origPos > 0) {
-        nodeIdx = getNodeAtPosition(posMap, origPos - 1);
-      }
-      if (nodeIdx !== null) {
-        dirtyNodes.add(nodeIdx);
-      }
-    }
-  }
-
-  console.log('[computeChanges] Dirty node indices:', [...dirtyNodes]);
-
-  if (dirtyNodes.size === 0) {
-    console.log('[computeChanges] No dirty nodes, returning empty');
-    return [];
-  }
-
-  // Step 2: Group contiguous dirty nodes
-  const sortedDirty = [...dirtyNodes].sort((a, b) => a - b);
-  const groups: number[][] = [];
-  let currentGroup: number[] = [sortedDirty[0]];
-
-  for (let i = 1; i < sortedDirty.length; i++) {
-    if (sortedDirty[i] === currentGroup[currentGroup.length - 1] + 1) {
-      currentGroup.push(sortedDirty[i]);
-    } else {
-      groups.push(currentGroup);
-      currentGroup = [sortedDirty[i]];
-    }
-  }
-  groups.push(currentGroup);
-
-  console.log('[computeChanges] Dirty node groups:', JSON.stringify(groups));
-
-  // Step 3: For each group, map original range to new text range
   const operations: ChangeOperation[] = [];
+  let oldIndex = 0;
 
-  for (const group of groups) {
-    const firstIdx = group[0];
-    const lastIdx = group[group.length - 1];
+  for (let i = 0; i < diffs.length; i++) {
+    const part = diffs[i];
 
-    const groupOriginal = group.map((idx) => nodeContents[idx]).join('');
-    const groupStart = posMap[firstIdx].start;
-    const groupEnd = posMap[lastIdx].end;
+    if (!part.added && !part.removed) {
+      // Equal — advance through old nodes
+      oldIndex += part.count!;
+    } else if (part.removed) {
+      const deleteIds = nodeIds.slice(oldIndex, oldIndex + part.count!);
+      const afterId = oldIndex > 0 ? nodeIds[oldIndex - 1] : null;
 
-    // Walk diffs to map [groupStart, groupEnd) in original to a range in new text.
-    let oPos = 0;
-    let nPos = 0;
-    let newStart: number | null = null;
-    let newEnd: number | null = null;
-    let justFinishedGroupDelete = false;
-
-    for (const [diffOp, diffText] of diffs) {
-      if (diffOp === 0) {
-        // Equal segment
-        if (newStart === null && oPos + diffText.length > groupStart) {
-          newStart = nPos + (groupStart - oPos);
-        }
-        if (newEnd === null && oPos + diffText.length >= groupEnd) {
-          newEnd = nPos + (groupEnd - oPos);
-        }
-        oPos += diffText.length;
-        nPos += diffText.length;
-        justFinishedGroupDelete = false;
-      } else if (diffOp === -1) {
-        // Delete segment
-        if (newStart === null && oPos + diffText.length > groupStart) {
-          newStart = nPos;
-        }
-        if (newEnd === null && oPos + diffText.length >= groupEnd) {
-          newEnd = nPos;
-          justFinishedGroupDelete = true;
-        }
-        oPos += diffText.length;
-      } else if (diffOp === 1) {
-        // Insert segment
-        if (newStart === null && oPos >= groupStart) {
-          newStart = nPos;
-        }
-        // Extend newEnd if this insert is at or within the group boundary
-        // Covers: delete+insert (replace) and pure insert at node edge
-        if (
-          justFinishedGroupDelete ||
-          (newEnd !== null && oPos >= groupStart && oPos <= groupEnd)
-        ) {
-          newEnd = nPos + diffText.length;
-        }
-        nPos += diffText.length;
-        justFinishedGroupDelete = false;
+      // Check if next part is an addition (replace)
+      const nextPart = diffs[i + 1];
+      if (nextPart && nextPart.added) {
+        operations.push({
+          type: 'replace',
+          deleteIds,
+          afterId,
+          newText: nextPart.value.join(''),
+        });
+        i++; // Skip the added part
+      } else {
+        operations.push({
+          type: 'delete',
+          deleteIds,
+          afterId: null,
+        });
       }
-    }
-
-    if (newStart === null) newStart = nPos;
-    if (newEnd === null) newEnd = nPos;
-
-    const groupNew = newText.slice(newStart, newEnd);
-    const deleteIds = group.map((idx) => nodeIds[idx]);
-    const afterId = firstIdx > 0 ? nodeIds[firstIdx - 1] : null;
-
-    console.log(`[computeChanges] Group: nodes ${firstIdx}-${lastIdx}`);
-    console.log(`[computeChanges]   Original: "${groupOriginal}"`);
-    console.log(`[computeChanges]   New:      "${groupNew}"`);
-    console.log(`[computeChanges]   newStart: ${newStart}, newEnd: ${newEnd}`);
-    console.log(`[computeChanges]   deleteIds: ${deleteIds}`);
-    console.log(`[computeChanges]   afterId: ${afterId}`);
-
-    if (groupNew.length === 0) {
+      oldIndex += part.count!;
+    } else if (part.added) {
+      // Pure insert (no preceding remove)
+      const afterId = oldIndex > 0 ? nodeIds[oldIndex - 1] : null;
       operations.push({
-        type: 'delete',
-        deleteIds,
-        afterId: null,
-      });
-    } else if (groupOriginal === groupNew) {
-      console.log('[computeChanges]   Skipping — text unchanged after snap');
-    } else {
-      operations.push({
-        type: 'replace',
-        deleteIds,
+        type: 'insert',
+        deleteIds: [],
         afterId,
-        newText: groupNew,
+        newText: part.value.join(''),
       });
     }
   }
