@@ -80,7 +80,6 @@ export async function POST(
 
     // Compute diffs
     const operations = computeChanges(
-      current.text,
       newText,
       nodeIds,
       nodeContents
