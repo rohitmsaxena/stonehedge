@@ -15,7 +15,7 @@
   },
   "dependencies": {
     "@prisma/client": "^7.4.2",
-    "diff-match-patch": "^1.0.5",
+    "diff": "^8.0.3",
     "next": "16.1.6",
     "react": "19.2.3",
     "react-dom": "19.2.3"
@@ -24,7 +24,7 @@
     "@prisma/adapter-better-sqlite3": "^7.4.2",
     "@tailwindcss/postcss": "^4",
     "@types/better-sqlite3": "^7.6.13",
-    "@types/diff-match-patch": "^1.0.36",
+    "@types/diff": "^7.0.2",
     "@types/jest": "^30.0.0",
     "@types/node": "^20.19.35",
     "@types/react": "^19",
