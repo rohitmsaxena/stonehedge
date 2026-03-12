@@ -255,5 +255,22 @@ describe('diff.service', () => {
       expect(changes[0].deleteIds).toEqual(['n1']);
       expect(changes[0].newText).toBe('The ');
     });
+
+    it('should handle nodes with different word boundaries than splitIntoWords', () => {
+      // Simulate nodes created by a different splitting regex (e.g. seed uses /(\S+\s*)/g)
+      // where word boundaries don't match splitIntoWords
+      const nodeIds = ['n1', 'n2', 'n3'];
+      // Node "quick brown " spans two splitIntoWords words
+      const nodeContents = ['The ', 'quick brown ', 'fox'];
+      const original = 'The quick brown fox';
+      const edited = 'The slow brown fox';
+
+      const changes = computeChanges(original, edited, nodeIds, nodeContents);
+
+      expect(changes).toHaveLength(1);
+      expect(changes[0].type).toBe('replace');
+      expect(changes[0].deleteIds).toContain('n2');
+      expect(changes[0].newText).toBe('slow ');
+    });
   });
 });
