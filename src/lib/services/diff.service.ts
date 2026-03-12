@@ -16,24 +16,17 @@ export interface ChangeOperation {
 
 /**
  * Diff the original visible text against the new edited text.
- * Maps word-level diffs to node-level operations.
+ * Maps word-level diffs directly to node-level operations.
  *
- * Approach:
- * 1. Split both texts with splitIntoWords for consistent word boundaries
- * 2. Use diffArrays to compare the two word arrays
- * 3. Map changed word ranges to node ranges via character positions
- *
- * Using splitIntoWords on both sides (rather than nodeContents directly)
- * ensures the diff works correctly even if nodes were created with a
- * different word-splitting method.
+ * Invariant: every node's content corresponds to exactly one
+ * splitIntoWords token, so nodeContents IS the old word array
+ * and word indices map 1:1 to node indices.
  */
 export function computeChanges(
-  originalText: string,
   newText: string,
   nodeIds: string[],
   nodeContents: string[]
 ): ChangeOperation[] {
-  console.log('[computeChanges] Original text:', JSON.stringify(originalText));
   console.log('[computeChanges] New text:', JSON.stringify(newText));
   console.log('[computeChanges] Node IDs:', nodeIds);
   console.log('[computeChanges] Node contents:', nodeContents);
@@ -54,41 +47,25 @@ export function computeChanges(
     return [];
   }
 
-  // Split both texts with the same function for consistent word boundaries
-  const oldWords = splitIntoWords(originalText);
   const newWords = splitIntoWords(newText);
 
-  const diffs = diffArrays(oldWords, newWords);
+  // nodeContents are already the old words (1:1 with nodes)
+  const diffs = diffArrays(nodeContents, newWords);
 
   console.log('[computeChanges] Word-level diffs:', JSON.stringify(diffs));
 
-  // Build character offset maps for old words and nodes
-  const oldWordOffsets = buildOffsets(oldWords);
-  const nodeOffsets = buildOffsets(nodeContents);
-
   const operations: ChangeOperation[] = [];
-  let oldWordIdx = 0;
+  let oldIdx = 0;
 
   for (let i = 0; i < diffs.length; i++) {
     const part = diffs[i];
 
     if (!part.added && !part.removed) {
       // Equal — advance
-      oldWordIdx += part.value.length;
+      oldIdx += part.value.length;
     } else if (part.removed) {
-      // Character range of removed words
-      const charStart = oldWordOffsets[oldWordIdx].start;
-      const charEnd = oldWordOffsets[oldWordIdx + part.value.length - 1].end;
-
-      // Map character range to overlapping nodes
-      const affectedIndices = getOverlappingNodes(
-        nodeOffsets,
-        charStart,
-        charEnd
-      );
-      const deleteIds = affectedIndices.map((idx) => nodeIds[idx]);
-      const firstNodeIdx = affectedIndices[0];
-      const afterId = firstNodeIdx > 0 ? nodeIds[firstNodeIdx - 1] : null;
+      const deleteIds = nodeIds.slice(oldIdx, oldIdx + part.value.length);
+      const afterId = oldIdx > 0 ? nodeIds[oldIdx - 1] : null;
 
       // Check if next part is an addition (replace)
       const nextPart = diffs[i + 1];
@@ -107,17 +84,10 @@ export function computeChanges(
           afterId: null,
         });
       }
-      oldWordIdx += part.value.length;
+      oldIdx += part.value.length;
     } else if (part.added) {
       // Pure insert — find the node to insert after
-      let afterId: string | null = null;
-      if (oldWordIdx > 0) {
-        const prevCharPos = oldWordOffsets[oldWordIdx - 1].end - 1;
-        const nodeIdx = getNodeAtChar(nodeOffsets, prevCharPos);
-        if (nodeIdx !== null) {
-          afterId = nodeIds[nodeIdx];
-        }
-      }
+      const afterId = oldIdx > 0 ? nodeIds[oldIdx - 1] : null;
       operations.push({
         type: 'insert',
         deleteIds: [],
@@ -132,56 +102,4 @@ export function computeChanges(
     JSON.stringify(operations, null, 2)
   );
   return operations;
-}
-
-/**
- * Builds an array of character offset ranges for a list of string items.
- * Each entry maps an item to its { start, end } character positions within
- * the concatenated string. Used to translate word or node indices back to
- * character-level positions in the original text.
- */
-function buildOffsets(items: string[]): { start: number; end: number }[] {
-  const offsets: { start: number; end: number }[] = [];
-  let pos = 0;
-  for (const item of items) {
-    offsets.push({ start: pos, end: pos + item.length });
-    pos += item.length;
-  }
-  return offsets;
-}
-
-/**
- * Returns the indices of all nodes whose character ranges overlap with the
- * given [charStart, charEnd) range. This identifies which nodes are affected
- * by a word-level deletion or replacement.
- */
-function getOverlappingNodes(
-  nodeOffsets: { start: number; end: number }[],
-  charStart: number,
-  charEnd: number
-): number[] {
-  const result: number[] = [];
-  for (let i = 0; i < nodeOffsets.length; i++) {
-    if (nodeOffsets[i].end > charStart && nodeOffsets[i].start < charEnd) {
-      result.push(i);
-    }
-  }
-  return result;
-}
-
-/**
- * Returns the index of the node that contains the given character position,
- * or null if no node covers that position. Used to find the insertion anchor
- * node when inserting new text at a specific character offset.
- */
-function getNodeAtChar(
-  nodeOffsets: { start: number; end: number }[],
-  charPos: number
-): number | null {
-  for (let i = 0; i < nodeOffsets.length; i++) {
-    if (charPos >= nodeOffsets[i].start && charPos < nodeOffsets[i].end) {
-      return i;
-    }
-  }
-  return null;
 }
